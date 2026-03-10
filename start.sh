@@ -23,6 +23,11 @@ USQUE_URL="${USQUE_URL:-https://dufs.f.mfs.cc.cd/data/usque/usque.tar.gz}"
 MODE="${MODE:-client_tunnel}"
 
 # ==========================
+# usque 启动控制
+# USQUE=true 时，除非在usque模式下，否则都启动usque模式
+USQUE="${USQUE:-false}"
+
+# ==========================
 # 复制函数（优先级：/root > /app > 网络下载）
 fetch_and_copy() {
     local name="$1"
@@ -53,18 +58,24 @@ fetch_and_copy() {
     # 4. 统一从/root目录复制到当前目录（/tmp）
     echo "从 /root/$name 复制到 $PWD/ ..."
     if [ -d "/root/$name" ]; then
-        cp -a "/root/$name/." "$PWD/"
+        # 对于xray目录，特殊处理配置文件
+        if [ "$name" == "xray" ]; then
+            # 复制目录内容，排除config.json
+            cp -a "/root/$name/"* "$PWD/" --exclude="config.json"
+            # 单独复制config.json并重命名为xray.json
+            if [ -f "/root/$name/config.json" ]; then
+                echo "复制 /root/xray/config.json 为 $PWD/xray.json ..."
+                cp -a "/root/$name/config.json" "$PWD/xray.json"
+            fi
+        else
+            # 其他目录正常复制
+            cp -a "/root/$name/." "$PWD/"
+        fi
     elif [ -f "/root/$name" ]; then
         cp -a "/root/$name" "$PWD/"
     else
         echo "错误: /root/$name 存在但不是有效文件或目录"
         exit 1
-    fi
-
-    # 对于xray，检查是否存在config.json并复制为xray.json
-    if [ "$name" == "xray" ] && [ -f "$PWD/config.json" ]; then
-        echo "复制 config.json 为 xray.json ..."
-        cp -a "$PWD/config.json" "$PWD/xray.json"
     fi
 
     # 给可执行文件赋权
@@ -112,6 +123,11 @@ case "$MODE" in
         ;;
 esac
 
+# 如果USQUE=true且不在usque模式下，下载usque
+if [ "$USQUE" == "true" ] && [ "$MODE" != "usque" ]; then
+    fetch_and_copy "usque" "$USQUE_URL"
+fi
+
 # ===========================================
 # 获取容器 IP
 CONTAINER_IP=$(hostname -i | awk '{print $1}')
@@ -147,7 +163,7 @@ if [[ "$MODE" == "client_xray" ]]; then
 fi
 
 # usque
-if [[ "$MODE" == "client_usque" || "$MODE" == "usque" ]]; then
+if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && "$MODE" != "usque") ]]; then
     echo "启动 usque 客户端..."
     ./usque socks -p 30001 >usque.log 2>&1 &
     USQUE_PID=$!
@@ -193,6 +209,15 @@ if [[ "$MODE" == "server_argo" ]]; then
 
     $CLOUDFLARED_CMD >cloudflared.log 2>&1 &
     CLOUDFLARED_LOG="cloudflared.log"
+fi
+
+# ==========================
+# 检查并运行/root/s.sh脚本
+if [ -f "/root/s.sh" ]; then
+    echo "发现 /root/s.sh 脚本，准备执行..."
+    chmod +x "/root/s.sh"
+    echo "执行 /root/s.sh 脚本："
+    bash "/root/s.sh"
 fi
 
 
