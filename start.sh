@@ -61,7 +61,7 @@ fetch_and_copy() {
         # 对于xray目录，特殊处理配置文件
         if [ "$name" == "xray" ]; then
             # 复制目录内容，排除config.json
-            cp -a "/root/$name/"* "$PWD/" --exclude="config.json"
+            find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$PWD/" \;
             # 单独复制config.json并重命名为xray.json
             if [ -f "/root/$name/config.json" ]; then
                 echo "复制 /root/xray/config.json 为 $PWD/xray.json ..."
