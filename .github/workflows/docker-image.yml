@@ -1,8 +1,8 @@
 name: Build and Push Docker Image
 
-on:
+于:
   push:
-    branches: [ main ]
+    分支: [ main ]
     paths:
       - 'Dockerfile'
       - 'start.sh'
@@ -42,8 +42,8 @@ jobs:
           # 关键步骤 2: 在此处添加 linux/arm64
           # 如果还需要支持 32位 ARM（如老款树莓派），可以加上 linux/arm/v7
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/dxa:latest
+          标签: |
+            ghcr.io/ymj1352/myrepo/dxa:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=HTTP Server
