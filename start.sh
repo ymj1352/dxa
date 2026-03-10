@@ -31,36 +31,34 @@ fetch_and_copy() {
     # 1. 首先检查/root目录（docker挂载文件夹）
     if [ -e "/root/$name" ]; then
         echo "使用 /root/$name ..."
-        # 如果是目录，复制目录内容；如果是文件，直接复制
-        if [ -d "/root/$name" ]; then
-            cp -a "/root/$name/." "$PWD/"
-        elif [ -f "/root/$name" ]; then
-            cp -a "/root/$name" "$PWD/"
-        else
-            echo "错误: /root/$name 存在但不是有效文件或目录"
-            exit 1
-        fi
     # 2. 然后检查/app目录（镜像内置）
     elif [ -f "/app/$name.tar.gz" ]; then
-        echo "使用本地 /app/$name.tar.gz ..."
-        tar -xzf "/app/$name.tar.gz" -C "$PWD/"
+        echo "使用本地 /app/$name.tar.gz 并解压到 /root/$name ..."
+        tar -xzf "/app/$name.tar.gz" -C "/root/"
     # 3. 最后从网络下载
     else
-        echo "下载 $name ..."
+        echo "下载 $name 到 /root ..."
         cd /root
         curl -L -f --retry 3 "$url" -o "$name.tar.gz"
         tar -xzf "$name.tar.gz"
         rm -f "$name.tar.gz"
+    fi
 
-        # 如果是目录，复制目录内容；如果是文件，直接复制
-        if [ -d "/root/$name" ]; then
-            cp -a "/root/$name/." "$PWD/"
-        elif [ -f "/root/$name" ]; then
-            cp -a "/root/$name" "$PWD/"
-        else
-            echo "错误: /root/$name 下载或解压失败"
-            exit 1
-        fi
+    # 验证/root/$name是否存在
+    if [ ! -e "/root/$name" ]; then
+        echo "错误: /root/$name 不存在或解压失败"
+        exit 1
+    fi
+
+    # 4. 统一从/root目录复制到当前目录（/tmp）
+    echo "从 /root/$name 复制到 $PWD/ ..."
+    if [ -d "/root/$name" ]; then
+        cp -a "/root/$name/." "$PWD/"
+    elif [ -f "/root/$name" ]; then
+        cp -a "/root/$name" "$PWD/"
+    else
+        echo "错误: /root/$name 存在但不是有效文件或目录"
+        exit 1
     fi
 
     # 给可执行文件赋权
