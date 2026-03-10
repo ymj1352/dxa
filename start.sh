@@ -61,6 +61,12 @@ fetch_and_copy() {
         exit 1
     fi
 
+    # 对于xray，检查是否存在config.json并复制为xray.json
+    if [ "$name" == "xray" ] && [ -f "$PWD/config.json" ]; then
+        echo "复制 config.json 为 xray.json ..."
+        cp -a "$PWD/config.json" "$PWD/xray.json"
+    fi
+
     # 给可执行文件赋权
     if [ -f "$PWD/$name" ]; then
         chmod +x "$PWD/$name"
