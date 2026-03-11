@@ -38,6 +38,10 @@ MODE="${MODE:-client_tunnel}"
 USQUE="${USQUE:-false}"
 
 # ==========================
+# 检查并创建必要的目录
+mkdir -p /root
+
+# ==========================
 # 复制函数（优先级：/root > 网络下载）
 fetch_and_copy() {
     local name="$1"
@@ -74,24 +78,27 @@ fetch_and_copy() {
             ;;
     esac
 
+    # 清理之前的文件，避免冲突
+    if [ -d "/root/$name" ]; then
+        echo "清理旧的 /root/$name 目录..."
+        rm -rf "/root/$name"
+    fi
+    if [ -f "/root/$name.tar.gz" ]; then
+        echo "清理旧的 /root/$name.tar.gz 文件..."
+        rm -f "/root/$name.tar.gz"
+    fi
+
     # 1. 首先检查/root目录（docker挂载文件夹）
     if [ -e "/root/$name" ]; then
         echo "使用 /root/$name ..."
-        # 直接从/root复制到当前目录
+        # 直接复制整个文件夹到当前目录
         if [ -d "/root/$name" ]; then
-            # 对于xray目录，特殊处理配置文件
-            if [ "$name" == "xray" ]; then
-                # 复制目录内容，排除config.json
-                find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$current_dir/" \;
-                # 单独复制config.json并重命名为xray.json
-                if [ -f "/root/$name/config.json" ]; then
-                    echo "复制 /root/xray/config.json 为 $current_dir/xray.json ..."
-                    cp -a "/root/$name/config.json" "$current_dir/xray.json"
-                fi
-            else
-                # 其他目录正常复制
-                cp -a "/root/$name/"* "$current_dir/"
+            echo "从 /root/$name 复制到 $current_dir/ ..."
+            # 清理目标目录
+            if [ -d "$current_dir/$name" ]; then
+                rm -rf "$current_dir/$name"
             fi
+            cp -a "/root/$name" "$current_dir/"
         elif [ -f "/root/$name" ]; then
             cp -a "/root/$name" "$current_dir/"
         else
@@ -110,14 +117,19 @@ fetch_and_copy() {
             echo "\n错误: 下载 $name 失败，请检查网络连接或自定义下载地址"
             echo "提示: 请设置环境变量 $var_name 来指定自定义下载地址"
             echo "例如: docker run -e $var_name=https://your-custom-url/$ARCH_TYPE/$name.tar.gz ..."
+            # 清理下载失败的文件
+            rm -f "$name.tar.gz"
             exit 1
         fi
         
         echo "\n下载完成，正在解压..."
         if ! tar -xzf "$name.tar.gz"; then
             echo "错误: 解压 $name.tar.gz 失败"
+            # 清理解压失败的文件
+            rm -f "$name.tar.gz"
             exit 1
         fi
+        # 清理压缩包
         rm -f "$name.tar.gz"
         
         # 验证解压后的文件是否存在
@@ -126,23 +138,15 @@ fetch_and_copy() {
             exit 1
         fi
         
-        # 直接从/root复制到当前目录
+        # 直接复制整个文件夹到当前目录
         echo "从 /root/$name 复制到 $current_dir/ ..."
         cd "$current_dir"
+        # 清理目标目录
+        if [ -d "$current_dir/$name" ]; then
+            rm -rf "$current_dir/$name"
+        fi
         if [ -d "/root/$name" ]; then
-            # 对于xray目录，特殊处理配置文件
-            if [ "$name" == "xray" ]; then
-                # 复制目录内容，排除config.json
-                find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$current_dir/" \;
-                # 单独复制config.json并重命名为xray.json
-                if [ -f "/root/$name/config.json" ]; then
-                    echo "复制 /root/xray/config.json 为 $current_dir/xray.json ..."
-                    cp -a "/root/$name/config.json" "$current_dir/xray.json"
-                fi
-            else
-                # 其他目录正常复制
-                cp -a "/root/$name/"* "$current_dir/"
-            fi
+            cp -a "/root/$name" "$current_dir/"
         elif [ -f "/root/$name" ]; then
             cp -a "/root/$name" "$current_dir/"
         else
@@ -156,6 +160,12 @@ fetch_and_copy() {
         chmod +x "$current_dir/$name"
     elif [ -d "$current_dir/$name" ]; then
         find "$current_dir/$name" -type f -exec chmod +x {} \;
+        # 验证可执行文件是否存在
+        if [ ! -f "$current_dir/$name/$name" ]; then
+            echo "错误: $current_dir/$name/$name 可执行文件不存在"
+            echo "请检查下载的文件结构是否正确"
+            exit 1
+        fi
     fi
 }
 
@@ -222,66 +232,91 @@ fi
 # dns-proxy
 if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
     echo "启动 dns-proxy 客户端..."
-    ./dns-proxy >dns-proxy.log 2>&1 &
-    DNS_PROXY_PID=$!
-    DNS_PROXY_LOG="dns-proxy.log"
+    if [ -f "./dns-proxy/dns-proxy" ]; then
+        ./dns-proxy/dns-proxy >dns-proxy.log 2>&1 &
+        DNS_PROXY_PID=$!
+        DNS_PROXY_LOG="dns-proxy.log"
+    else
+        echo "错误: ./dns-proxy/dns-proxy 可执行文件不存在"
+        exit 1
+    fi
 fi
 
 # xray
 if [[ "$MODE" == "client_xray" ]]; then
     echo "启动 x-ray 客户端..."
-    ./xray run -config xray.json >xray.log 2>&1 &
-    XRAY_PID=$!
-    XRAY_LOG="xray.log"
+    if [ -f "./xray/xray" ]; then
+        ./xray/xray run -config ./xray/config.json >xray.log 2>&1 &
+        XRAY_PID=$!
+        XRAY_LOG="xray.log"
+    else
+        echo "错误: ./xray/xray 可执行文件不存在"
+        exit 1
+    fi
 fi
 
 # usque
 if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && "$MODE" != "usque") ]]; then
     echo "启动 usque 客户端..."
-    ./usque socks -p 30001 >usque.log 2>&1 &
-    USQUE_PID=$!
-    USQUE_LOG="usque.log"
+    if [ -f "./usque/usque" ]; then
+        ./usque/usque socks -p 30001 >usque.log 2>&1 &
+        USQUE_PID=$!
+        USQUE_LOG="usque.log"
+    else
+        echo "错误: ./usque/usque 可执行文件不存在"
+        exit 1
+    fi
 fi
 
 # 启动 x-tunnel
 if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "client_tunnel" || "$MODE" == "x-tunnel" ]]; then
     # 根据模式选择配置文件
-    if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
-        XTUNNEL_CMD="./x-tunnel -config config_server.yaml"
+    if [ -f "./x-tunnel/x-tunnel" ]; then
+        if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
+            XTUNNEL_CMD="./x-tunnel/x-tunnel -config ./x-tunnel/config_server.yaml"
+        else
+            XTUNNEL_CMD="./x-tunnel/x-tunnel -config ./x-tunnel/config.yaml"
+        fi
+
+        echo "启动 x-tunnel："
+        echo "$XTUNNEL_CMD"
+
+        $XTUNNEL_CMD >x-tunnel.log 2>&1 &
+        XTUNNEL_LOG="x-tunnel.log"
     else
-        XTUNNEL_CMD="./x-tunnel -config config.yaml"
+        echo "错误: ./x-tunnel/x-tunnel 可执行文件不存在"
+        exit 1
     fi
-
-    echo "启动 x-tunnel："
-    echo "$XTUNNEL_CMD"
-
-    $XTUNNEL_CMD >x-tunnel.log 2>&1 &
-    XTUNNEL_LOG="x-tunnel.log"
 fi
 
 # 启动 cloudflared
 if [[ "$MODE" == "server_argo" ]]; then
-    CLOUDFLARED_CMD="./cloudflared"
-    CLOUDFLARED_CONF="./cloudflared.txt"
+    if [ -f "./cloudflared/cloudflared" ]; then
+        CLOUDFLARED_CMD="./cloudflared/cloudflared"
+        CLOUDFLARED_CONF="./cloudflared/cloudflared.txt"
 
-    if [ -f "$CLOUDFLARED_CONF" ]; then
-        while IFS='=' read -r key value; do
-            key=$(echo "$key" | tr -d ' ')
-            value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [ -f "$CLOUDFLARED_CONF" ]; then
+            while IFS='=' read -r key value; do
+                key=$(echo "$key" | tr -d ' ')
+                value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-            # 跳过空行、注释、花括号
-            [[ -z "$key" || "$key" == "{" || "$key" == "}" || "$key" =~ ^// ]] && continue
-            [[ -z "$value" ]] && continue
+                # 跳过空行、注释、花括号
+                [[ -z "$key" || "$key" == "{" || "$key" == "}" || "$key" =~ ^// ]] && continue
+                [[ -z "$value" ]] && continue
 
-            CLOUDFLARED_CMD="$CLOUDFLARED_CMD --$key $value"
-        done < "$CLOUDFLARED_CONF"
+                CLOUDFLARED_CMD="$CLOUDFLARED_CMD --$key $value"
+            done < "$CLOUDFLARED_CONF"
+        fi
+
+        echo "启动 cloudflared："
+        echo "$CLOUDFLARED_CMD"
+
+        $CLOUDFLARED_CMD >cloudflared.log 2>&1 &
+        CLOUDFLARED_LOG="cloudflared.log"
+    else
+        echo "错误: ./cloudflared/cloudflared 可执行文件不存在"
+        exit 1
     fi
-
-    echo "启动 cloudflared："
-    echo "$CLOUDFLARED_CMD"
-
-    $CLOUDFLARED_CMD >cloudflared.log 2>&1 &
-    CLOUDFLARED_LOG="cloudflared.log"
 fi
 
 # ==========================
