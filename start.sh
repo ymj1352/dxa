@@ -44,6 +44,7 @@ fetch_and_copy() {
     local url="$2"
     local var_name=""
     local final_url=""
+    local current_dir="$PWD"
     
     # 根据组件名称获取对应的环境变量名称和值
     case "$name" in
@@ -76,6 +77,27 @@ fetch_and_copy() {
     # 1. 首先检查/root目录（docker挂载文件夹）
     if [ -e "/root/$name" ]; then
         echo "使用 /root/$name ..."
+        # 直接从/root复制到当前目录
+        if [ -d "/root/$name" ]; then
+            # 对于xray目录，特殊处理配置文件
+            if [ "$name" == "xray" ]; then
+                # 复制目录内容，排除config.json
+                find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$current_dir/" \;
+                # 单独复制config.json并重命名为xray.json
+                if [ -f "/root/$name/config.json" ]; then
+                    echo "复制 /root/xray/config.json 为 $current_dir/xray.json ..."
+                    cp -a "/root/$name/config.json" "$current_dir/xray.json"
+                fi
+            else
+                # 其他目录正常复制
+                cp -a "/root/$name/"* "$current_dir/"
+            fi
+        elif [ -f "/root/$name" ]; then
+            cp -a "/root/$name" "$current_dir/"
+        else
+            echo "错误: /root/$name 存在但不是有效文件或目录"
+            exit 1
+        fi
     # 2. 从网络下载
     else
         echo "下载 $name 到 /root ..."
@@ -92,42 +114,43 @@ fetch_and_copy() {
             exit 1
         fi
         rm -f "$name.tar.gz"
-    fi
-
-    # 验证/root/$name是否存在
-    if [ ! -e "/root/$name" ]; then
-        echo "错误: /root/$name 不存在或解压失败"
-        exit 1
-    fi
-
-    # 3. 统一从/root目录复制到当前目录（/tmp）
-    echo "从 /root/$name 复制到 $PWD/ ..."
-    if [ -d "/root/$name" ]; then
-        # 对于xray目录，特殊处理配置文件
-        if [ "$name" == "xray" ]; then
-            # 复制目录内容，排除config.json
-            find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$PWD/" \;
-            # 单独复制config.json并重命名为xray.json
-            if [ -f "/root/$name/config.json" ]; then
-                echo "复制 /root/xray/config.json 为 $PWD/xray.json ..."
-                cp -a "/root/$name/config.json" "$PWD/xray.json"
-            fi
-        else
-            # 其他目录正常复制
-            cp -a "/root/$name/." "$PWD/"
+        
+        # 验证解压后的文件是否存在
+        if [ ! -e "/root/$name" ]; then
+            echo "错误: /root/$name 不存在或解压失败"
+            exit 1
         fi
-    elif [ -f "/root/$name" ]; then
-        cp -a "/root/$name" "$PWD/"
-    else
-        echo "错误: /root/$name 存在但不是有效文件或目录"
-        exit 1
+        
+        # 直接从/root复制到当前目录
+        echo "从 /root/$name 复制到 $current_dir/ ..."
+        cd "$current_dir"
+        if [ -d "/root/$name" ]; then
+            # 对于xray目录，特殊处理配置文件
+            if [ "$name" == "xray" ]; then
+                # 复制目录内容，排除config.json
+                find "/root/$name" -type f -not -name "config.json" -exec cp -a {} "$current_dir/" \;
+                # 单独复制config.json并重命名为xray.json
+                if [ -f "/root/$name/config.json" ]; then
+                    echo "复制 /root/xray/config.json 为 $current_dir/xray.json ..."
+                    cp -a "/root/$name/config.json" "$current_dir/xray.json"
+                fi
+            else
+                # 其他目录正常复制
+                cp -a "/root/$name/"* "$current_dir/"
+            fi
+        elif [ -f "/root/$name" ]; then
+            cp -a "/root/$name" "$current_dir/"
+        else
+            echo "错误: /root/$name 存在但不是有效文件或目录"
+            exit 1
+        fi
     fi
 
     # 给可执行文件赋权
-    if [ -f "$PWD/$name" ]; then
-        chmod +x "$PWD/$name"
-    elif [ -d "$PWD/$name" ]; then
-        find "$PWD/$name" -type f -exec chmod +x {} \;
+    if [ -f "$current_dir/$name" ]; then
+        chmod +x "$current_dir/$name"
+    elif [ -d "$current_dir/$name" ]; then
+        find "$current_dir/$name" -type f -exec chmod +x {} \;
     fi
 }
 
@@ -201,7 +224,7 @@ fi
 
 # xray
 if [[ "$MODE" == "client_xray" ]]; then
-    echo "启动 xray 客户端..."
+    echo "启动 x-ray 客户端..."
     ./xray run -config xray.json >xray.log 2>&1 &
     XRAY_PID=$!
     XRAY_LOG="xray.log"
