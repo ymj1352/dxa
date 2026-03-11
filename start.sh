@@ -78,39 +78,35 @@ fetch_and_copy() {
             ;;
     esac
 
-    # 清理之前的文件，避免冲突
-    if [ -d "/root/$name" ]; then
-        echo "清理旧的 /root/$name 目录..."
-        rm -rf "/root/$name"
-    fi
-    if [ -f "/root/$name.tar.gz" ]; then
-        echo "清理旧的 /root/$name.tar.gz 文件..."
-        rm -f "/root/$name.tar.gz"
-    fi
-
     # 1. 首先检查/root目录（docker挂载文件夹）
-    if [ -e "/root/$name" ]; then
-        echo "使用 /root/$name ..."
+    if [ -d "/root/$name" ]; then
+        echo "使用 /root/$name 目录..."
         # 直接复制整个文件夹到当前目录
-        if [ -d "/root/$name" ]; then
-            echo "从 /root/$name 复制到 $current_dir/ ..."
-            # 清理目标目录
-            if [ -d "$current_dir/$name" ]; then
-                rm -rf "$current_dir/$name"
-            fi
-            cp -a "/root/$name" "$current_dir/"
-        elif [ -f "/root/$name" ]; then
-            cp -a "/root/$name" "$current_dir/"
-        else
-            echo "错误: /root/$name 存在但不是有效文件或目录"
-            exit 1
+        echo "从 /root/$name 复制到 $current_dir/ ..."
+        # 清理目标目录
+        if [ -d "$current_dir/$name" ]; then
+            rm -rf "$current_dir/$name"
         fi
+        cp -a "/root/$name" "$current_dir/"
+    elif [ -f "/root/$name" ]; then
+        echo "使用 /root/$name 文件..."
+        cp -a "/root/$name" "$current_dir/"
     # 2. 从网络下载
     else
         echo "下载 $name 到 /root ..."
         echo "下载地址: $final_url"
         echo "正在下载... (超时时间: 2分钟)"
         cd /root
+        
+        # 清理之前的文件，避免冲突
+        if [ -d "/root/$name" ]; then
+            echo "清理旧的 /root/$name 目录..."
+            rm -rf "/root/$name"
+        fi
+        if [ -f "/root/$name.tar.gz" ]; then
+            echo "清理旧的 /root/$name.tar.gz 文件..."
+            rm -f "/root/$name.tar.gz"
+        fi
         
         # 使用wget下载，添加进度显示和超时设置
         if ! wget --timeout=120 --tries=3 --show-progress "$final_url" -O "$name.tar.gz"; then
