@@ -102,13 +102,18 @@ fetch_and_copy() {
     else
         echo "下载 $name 到 /root ..."
         echo "下载地址: $final_url"
+        echo "正在下载... (超时时间: 2分钟)"
         cd /root
-        if ! curl -L -f --retry 3 "$final_url" -o "$name.tar.gz"; then
-            echo "错误: 下载 $name 失败，请检查网络连接或自定义下载地址"
+        
+        # 添加进度显示和超时设置
+        if ! curl -L -f --retry 3 --max-time 120 -# "$final_url" -o "$name.tar.gz"; then
+            echo "\n错误: 下载 $name 失败，请检查网络连接或自定义下载地址"
             echo "提示: 请设置环境变量 $var_name 来指定自定义下载地址"
             echo "例如: docker run -e $var_name=https://your-custom-url/$ARCH_TYPE/$name.tar.gz ..."
             exit 1
         fi
+        
+        echo "\n下载完成，正在解压..."
         if ! tar -xzf "$name.tar.gz"; then
             echo "错误: 解压 $name.tar.gz 失败"
             exit 1
