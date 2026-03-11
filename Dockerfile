@@ -5,10 +5,15 @@ WORKDIR /tmp
 
 COPY start.sh ./
 
-#EXPOSE 53
-#EXPOSE 10000  # dns-proxy Web界面
-EXPOSE 3000  # x-tunnel 端口
-#EXPOSE 30001  # usque 端口
+# EXPOSE 53
+# dns-proxy Web界面
+# EXPOSE 10000
+
+# x-tunnel 端口
+EXPOSE 3000
+
+# usque 端口
+# EXPOSE 30001
 
 # 只安装必要的运行时依赖
 RUN apk update && apk add --no-cache openssl curl tar gcompat bash && \
