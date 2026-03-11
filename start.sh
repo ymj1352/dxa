@@ -2,12 +2,22 @@
 set -e
 
 # ==========================
-# 下载地址声明
-XRAY_URL="${XRAY_URL:-https://dufs.f.mfs.cc.cd/data/xray/xray.tar.gz}"
-DNS_PROXY_URL="${DNS_PROXY_URL:-https://dufs.f.mfs.cc.cd/data/dns-proxy/dns-proxy.tar.gz}"
-X_TUNNEL_URL="${X_TUNNEL_URL:-https://dufs.f.mfs.cc.cd/data/x-tunnel/x-tunnel.tar.gz}"
-CLOUDFLARED_URL="${CLOUDFLARED_URL:-https://dufs.f.mfs.cc.cd/data/cloudflared/cloudflared.tar.gz}"
-USQUE_URL="${USQUE_URL:-https://dufs.f.mfs.cc.cd/data/usque/usque.tar.gz}"
+# 检测系统架构
+ARCH=$(uname -m)
+if [[ "$ARCH" == *"arm"* || "$ARCH" == *"aarch64"* ]]; then
+    ARCH_TYPE="arm"
+else
+    ARCH_TYPE="x86"
+fi
+echo "检测到系统架构: $ARCH，使用 $ARCH_TYPE 版本组件"
+
+# ==========================
+# 下载地址声明（根据架构自动选择，环境变量优先）
+XRAY_URL="${XRAY_URL:-https://dufs.f.mfs.cc.cd/data/$ARCH_TYPE/xray.tar.gz}"
+DNS_PROXY_URL="${DNS_PROXY_URL:-https://dufs.f.mfs.cc.cd/data/$ARCH_TYPE/dns-proxy.tar.gz}"
+X_TUNNEL_URL="${X_TUNNEL_URL:-https://dufs.f.mfs.cc.cd/data/$ARCH_TYPE/x-tunnel.tar.gz}"
+CLOUDFLARED_URL="${CLOUDFLARED_URL:-https://dufs.f.mfs.cc.cd/data/$ARCH_TYPE/cloudflared.tar.gz}"
+USQUE_URL="${USQUE_URL:-https://dufs.f.mfs.cc.cd/data/$ARCH_TYPE/usque.tar.gz}"
 
 # ==========================
 # 默认 MODE
@@ -28,24 +38,59 @@ MODE="${MODE:-client_tunnel}"
 USQUE="${USQUE:-false}"
 
 # ==========================
-# 复制函数（优先级：/root > /app > 网络下载）
+# 复制函数（优先级：/root > 网络下载）
 fetch_and_copy() {
     local name="$1"
     local url="$2"
+    local var_name=""
+    local final_url=""
+    
+    # 根据组件名称获取对应的环境变量名称和值
+    case "$name" in
+        "xray") 
+            var_name="XRAY_URL" 
+            final_url="${XRAY_URL}" 
+            ;;
+        "dns-proxy") 
+            var_name="DNS_PROXY_URL" 
+            final_url="${DNS_PROXY_URL}" 
+            ;;
+        "x-tunnel") 
+            var_name="X_TUNNEL_URL" 
+            final_url="${X_TUNNEL_URL}" 
+            ;;
+        "cloudflared") 
+            var_name="CLOUDFLARED_URL" 
+            final_url="${CLOUDFLARED_URL}" 
+            ;;
+        "usque") 
+            var_name="USQUE_URL" 
+            final_url="${USQUE_URL}" 
+            ;;
+        *) 
+            var_name="UNKNOWN_URL" 
+            final_url="$url" 
+            ;;
+    esac
 
     # 1. 首先检查/root目录（docker挂载文件夹）
     if [ -e "/root/$name" ]; then
         echo "使用 /root/$name ..."
-    # 2. 然后检查/app目录（镜像内置）
-    elif [ -f "/app/$name.tar.gz" ]; then
-        echo "使用本地 /app/$name.tar.gz 并解压到 /root/$name ..."
-        tar -xzf "/app/$name.tar.gz" -C "/root/"
-    # 3. 最后从网络下载
+    # 2. 从网络下载
     else
         echo "下载 $name 到 /root ..."
+        echo "下载地址: $final_url"
         cd /root
-        curl -L -f --retry 3 "$url" -o "$name.tar.gz"
-        tar -xzf "$name.tar.gz"
+        if ! curl -L -f --retry 3 "$final_url" -o "$name.tar.gz"; then
+            echo "错误: 下载 $name 失败，请检查网络连接或自定义下载地址"
+            echo "提示: 请设置环境变量 $var_name 来指定自定义下载地址"
+            echo "例如: docker run -e $var_name=https://your-custom-url/$ARCH_TYPE/$name.tar.gz ..."
+            exit 1
+        fi
+        if ! tar -xzf "$name.tar.gz"; then
+            echo "错误: 解压 $name.tar.gz 失败"
+            exit 1
+        fi
         rm -f "$name.tar.gz"
     fi
 
@@ -55,7 +100,7 @@ fetch_and_copy() {
         exit 1
     fi
 
-    # 4. 统一从/root目录复制到当前目录（/tmp）
+    # 3. 统一从/root目录复制到当前目录（/tmp）
     echo "从 /root/$name 复制到 $PWD/ ..."
     if [ -d "/root/$name" ]; then
         # 对于xray目录，特殊处理配置文件
