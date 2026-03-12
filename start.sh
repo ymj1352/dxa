@@ -259,7 +259,7 @@ echo "==========================================="
 # 如果 dns-proxy 在当前模式下运行，则输出访问提示
 if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
     echo "请登录 http://$CONTAINER_IP:10000 配置参数"
-    echo "代理地址请改为socks5://127.0.0.1:3000"
+    echo "代理地址请改为socks5://127.0.0.1:XXXX  xray:10001 x-tunne:100002 usque:10003"
 fi
 
 # ==========================
@@ -282,6 +282,16 @@ fi
 if [[ "$MODE" == "client_xray" ]]; then
     echo "启动 x-ray 客户端..."
     if [ -f "/tmp/xray/xray" ]; then
+        # 修改 xray 配置文件，将入站的 socks 端口改为 10001
+        if [ -f "/tmp/xray/config.json" ]; then
+            echo "修改 xray 配置文件，将入站的 socks 端口改为 10001..."
+            # 使用 sed 命令修改配置文件中的第一个入站 socks 端口
+            # 只修改 inbounds 数组中的 socks 端口
+            sed -i '/"inbounds": \[/,/\]/ s/\("tag": "socks",\s*"port":\s*\)[0-9]*/\110001/' /tmp/xray/config.json
+            echo "配置文件修改完成"
+        else
+            echo "警告: /tmp/xray/config.json 配置文件不存在，使用默认配置"
+        fi
         # 在xray目录内启动
         (cd /tmp/xray && ./xray run -config config.json) >xray.log 2>&1 &
         XRAY_PID=$!
@@ -299,9 +309,9 @@ if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && 
         echo "跳过 usque 启动（注册失败）"
     else
         echo "启动 usque 客户端..."
-        # 直接在 /tmp/usque 目录内启动
+        # 直接在 /tmp/usque 目录内启动，使用端口10003
         if [ -f "/tmp/usque/usque" ]; then
-            (cd /tmp/usque && ./usque socks -p 30001) >usque.log 2>&1 &
+            (cd /tmp/usque && ./usque socks -p 10003) >usque.log 2>&1 &
             USQUE_PID=$!
             USQUE_LOG="usque.log"
         else
@@ -316,11 +326,11 @@ if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "clie
     # 根据模式选择配置文件
     if [ -f "/tmp/x-tunnel/x-tunnel" ]; then
         if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
-            # 在x-tunnel目录内启动
-            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml) >x-tunnel.log 2>&1 &
+            # 在x-tunnel目录内启动，使用端口10002
+            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml -port 10002) >x-tunnel.log 2>&1 &
         else
-            # 在x-tunnel目录内启动
-            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml) >x-tunnel.log 2>&1 &
+            # 在x-tunnel目录内启动，使用端口10002
+            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml -port 10002) >x-tunnel.log 2>&1 &
         fi
         XTUNNEL_PID=$!
         XTUNNEL_LOG="x-tunnel.log"
@@ -418,6 +428,16 @@ while true; do
     # 检查xray
     if [[ "$MODE" == "client_xray" ]]; then
         if ! check_process "xray"; then
+            # 修改 xray 配置文件，将入站的 socks 端口改为 10001
+            if [ -f "/tmp/xray/config.json" ]; then
+                echo "修改 xray 配置文件，将入站的 socks 端口改为 10001..."
+                # 使用 sed 命令修改配置文件中的第一个入站 socks 端口
+                # 只修改 inbounds 数组中的 socks 端口
+                sed -i '/"inbounds": \[/,/\]/ s/\("tag": "socks",\s*"port":\s*\)[0-9]*/\110001/' /tmp/xray/config.json
+                echo "配置文件修改完成"
+            else
+                echo "警告: /tmp/xray/config.json 配置文件不存在，使用默认配置"
+            fi
             start_process "xray" "(cd /tmp/xray && ./xray run -config config.json) >/tmp/xray.log 2>&1 &"
         fi
     fi
@@ -427,9 +447,9 @@ while true; do
         # 检查是否跳过 usque
         if [ "$SKIP_USQUE" != "true" ]; then
             if ! check_process "usque"; then
-                # 直接在 /tmp/usque 目录内启动
+                # 直接在 /tmp/usque 目录内启动，使用端口10003
                 if [ -f "/tmp/usque/usque" ]; then
-                    start_process "usque" "(cd /tmp/usque && ./usque socks -p 30001) >/tmp/usque.log 2>&1 &"
+                    start_process "usque" "(cd /tmp/usque && ./usque socks -p 10003) >/tmp/usque.log 2>&1 &"
                 else
                     echo "错误: /tmp/usque/usque 可执行文件不存在"
                     continue
@@ -442,9 +462,9 @@ while true; do
     if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "client_tunnel" || "$MODE" == "x-tunnel" ]]; then
         if ! check_process "x-tunnel"; then
             if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
-                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml) >/tmp/x-tunnel.log 2>&1 &"
+                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &"
             else
-                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config.yaml) >/tmp/x-tunnel.log 2>&1 &"
+                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &"
             fi
         fi
     fi
