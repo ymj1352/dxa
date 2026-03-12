@@ -387,6 +387,11 @@ fi
 cat > /tmp/keepalive.sh << 'EOF'
 #!/bin/bash
 
+# 设置变量
+CHECK_INTERVAL=60  # 检查间隔（秒）
+LOG_CLEAN_INTERVAL=3600  # 日志清理间隔（秒）
+last_log_clean=$(date +%s)
+
 # 检查进程是否存在
 check_process() {
     local name=$1
@@ -394,9 +399,12 @@ check_process() {
     
     if [ -f "$pid_file" ]; then
         local pid=$(cat "$pid_file")
-        if ps -p $pid > /dev/null 2>&1; then
+        # 使用更高效的进程检查方式
+        if [ -d "/proc/$pid" ]; then
             return 0
         else
+            # 清理无效的pid文件
+            rm -f "$pid_file"
             return 1
         fi
     else
@@ -412,8 +420,24 @@ start_process() {
     
     echo "启动 $name..."
     eval "$cmd"
-    echo $! > "$pid_file"
-    echo "$name 启动成功，PID: $(cat "$pid_file")"
+    local pid=$!
+    # 检查进程是否成功启动
+    if [ -d "/proc/$pid" ]; then
+        echo $pid > "$pid_file"
+        echo "$name 启动成功，PID: $pid"
+    else
+        echo "错误: $name 启动失败"
+    fi
+}
+
+# 清理过期日志
+clean_logs() {
+    local current_time=$(date +%s)
+    if [ $((current_time - last_log_clean)) -ge $LOG_CLEAN_INTERVAL ]; then
+        echo "清理过期的日志文件..."
+        find /tmp -name "*.log" -mtime +1 -delete
+        last_log_clean=$current_time
+    fi
 }
 
 # 主循环
@@ -452,7 +476,6 @@ while true; do
                     start_process "usque" "(cd /tmp/usque && ./usque socks -p 10003) >/tmp/usque.log 2>&1 &"
                 else
                     echo "错误: /tmp/usque/usque 可执行文件不存在"
-                    continue
                 fi
             fi
         fi
@@ -476,7 +499,11 @@ while true; do
         fi
     fi
     
-    sleep 10
+    # 清理过期的日志文件，避免磁盘空间占用
+    clean_logs
+    
+    # 增加睡眠时间，减少检查频率
+    sleep $CHECK_INTERVAL
 done
 EOF
 
