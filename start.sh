@@ -37,9 +37,6 @@ MODE="${MODE:-client_tunnel}"
 # USQUE=true 时，除非在usque模式下，否则都启动usque模式
 USQUE="${USQUE:-false}"
 
-# ==========================
-# 检查并创建必要的目录
-mkdir -p /root
 
 # ==========================
 # 复制函数（优先级：/root > 网络下载）
@@ -294,17 +291,25 @@ fi
 if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
     echo "启动 dns-proxy 客户端..."
     if [ -f "/tmp/dns-proxy/dns-proxy" ]; then
+        # 清理旧的日志文件
+        rm -f /tmp/dns-proxy.log
         # 在dns-proxy目录内启动
-        (cd /tmp/dns-proxy && ./dns-proxy) >dns-proxy.log 2>&1 &
+        (cd /tmp/dns-proxy && ./dns-proxy) >/tmp/dns-proxy.log 2>&1 &
         DNS_PROXY_PID=$!
-        DNS_PROXY_LOG="dns-proxy.log"
+        DNS_PROXY_LOG="/tmp/dns-proxy.log"
         echo "dns-proxy 启动成功，PID: $DNS_PROXY_PID"
-        # 等待服务启动
-        sleep 2
+        
+        # 等待服务启动，增加等待时间
+        sleep 3
+        
         # 检查服务是否启动成功
-        if ! ps -p $DNS_PROXY_PID > /dev/null 2>&1; then
-            echo "错误: dns-proxy 启动失败"
-            exit 1
+        if ps -p $DNS_PROXY_PID > /dev/null 2>&1; then
+            echo "dns-proxy 服务运行正常"
+        else
+            # 查看日志获取失败原因
+            echo "错误: dns-proxy 启动失败，查看日志获取详细信息..."
+            cat /tmp/dns-proxy.log
+            # 继续执行脚本，不停止
         fi
     else
         echo "错误: /tmp/dns-proxy/dns-proxy 可执行文件不存在"
@@ -316,17 +321,23 @@ fi
 if [[ "$MODE" == "client_xray" ]]; then
     echo "启动 x-ray 客户端..."
     if [ -f "/tmp/xray/xray" ]; then
+        # 清理旧的日志文件
+        rm -f /tmp/xray.log
         # 在xray目录内启动
-        (cd /tmp/xray && ./xray run -config config.json) >xray.log 2>&1 &
+        (cd /tmp/xray && ./xray run -config config.json) >/tmp/xray.log 2>&1 &
         XRAY_PID=$!
-        XRAY_LOG="xray.log"
+        XRAY_LOG="/tmp/xray.log"
         echo "x-ray 启动成功，PID: $XRAY_PID"
         # 等待服务启动
-        sleep 2
+        sleep 3
         # 检查服务是否启动成功
-        if ! ps -p $XRAY_PID > /dev/null 2>&1; then
-            echo "错误: x-ray 启动失败"
-            exit 1
+        if ps -p $XRAY_PID > /dev/null 2>&1; then
+            echo "x-ray 服务运行正常"
+        else
+            # 查看日志获取失败原因
+            echo "错误: x-ray 启动失败，查看日志获取详细信息..."
+            cat /tmp/xray.log
+            # 继续执行脚本，不停止
         fi
     else
         echo "错误: /tmp/xray/xray 可执行文件不存在"
@@ -343,16 +354,22 @@ if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && 
         echo "启动 usque 客户端..."
         # 直接在 /tmp/usque 目录内启动，使用端口10003
         if [ -f "/tmp/usque/usque" ]; then
-            (cd /tmp/usque && ./usque socks -p 10003) >usque.log 2>&1 &
+            # 清理旧的日志文件
+            rm -f /tmp/usque.log
+            (cd /tmp/usque && ./usque socks -p 10003) >/tmp/usque.log 2>&1 &
             USQUE_PID=$!
-            USQUE_LOG="usque.log"
+            USQUE_LOG="/tmp/usque.log"
             echo "usque 启动成功，PID: $USQUE_PID"
             # 等待服务启动
-            sleep 2
+            sleep 3
             # 检查服务是否启动成功
-            if ! ps -p $USQUE_PID > /dev/null 2>&1; then
-                echo "错误: usque 启动失败"
-                exit 1
+            if ps -p $USQUE_PID > /dev/null 2>&1; then
+                echo "usque 服务运行正常"
+            else
+                # 查看日志获取失败原因
+                echo "错误: usque 启动失败，查看日志获取详细信息..."
+                cat /tmp/usque.log
+                # 继续执行脚本，不停止
             fi
         else
             echo "错误: /tmp/usque/usque 可执行文件不存在"
@@ -365,22 +382,28 @@ fi
 if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "client_tunnel" || "$MODE" == "x-tunnel" ]]; then
     # 根据模式选择配置文件
     if [ -f "/tmp/x-tunnel/x-tunnel" ]; then
+        # 清理旧的日志文件
+        rm -f /tmp/x-tunnel.log
         if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
             # 在x-tunnel目录内启动，使用端口10002
-            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml -port 10002) >x-tunnel.log 2>&1 &
+            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &
         else
             # 在x-tunnel目录内启动，使用端口10002
-            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml -port 10002) >x-tunnel.log 2>&1 &
+            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &
         fi
         XTUNNEL_PID=$!
-        XTUNNEL_LOG="x-tunnel.log"
+        XTUNNEL_LOG="/tmp/x-tunnel.log"
         echo "x-tunnel 启动成功，PID: $XTUNNEL_PID"
         # 等待服务启动
-        sleep 2
+        sleep 3
         # 检查服务是否启动成功
-        if ! ps -p $XTUNNEL_PID > /dev/null 2>&1; then
-            echo "错误: x-tunnel 启动失败"
-            exit 1
+        if ps -p $XTUNNEL_PID > /dev/null 2>&1; then
+            echo "x-tunnel 服务运行正常"
+        else
+            # 查看日志获取失败原因
+            echo "错误: x-tunnel 启动失败，查看日志获取详细信息..."
+            cat /tmp/x-tunnel.log
+            # 继续执行脚本，不停止
         fi
     else
         echo "错误: /tmp/x-tunnel/x-tunnel 可执行文件不存在"
@@ -411,17 +434,23 @@ if [[ "$MODE" == "server_argo" ]]; then
         echo "启动 cloudflared："
         echo "$CLOUDFLARED_CMD"
 
+        # 清理旧的日志文件
+        rm -f /tmp/cloudflared.log
         # 在cloudflared目录内启动
-        (cd /tmp/cloudflared && $CLOUDFLARED_CMD) >cloudflared.log 2>&1 &
+        (cd /tmp/cloudflared && $CLOUDFLARED_CMD) >/tmp/cloudflared.log 2>&1 &
         CLOUDFLARED_PID=$!
-        CLOUDFLARED_LOG="cloudflared.log"
+        CLOUDFLARED_LOG="/tmp/cloudflared.log"
         echo "cloudflared 启动成功，PID: $CLOUDFLARED_PID"
         # 等待服务启动
-        sleep 2
+        sleep 3
         # 检查服务是否启动成功
-        if ! ps -p $CLOUDFLARED_PID > /dev/null 2>&1; then
-            echo "错误: cloudflared 启动失败"
-            exit 1
+        if ps -p $CLOUDFLARED_PID > /dev/null 2>&1; then
+            echo "cloudflared 服务运行正常"
+        else
+            # 查看日志获取失败原因
+            echo "错误: cloudflared 启动失败，查看日志获取详细信息..."
+            cat /tmp/cloudflared.log
+            # 继续执行脚本，不停止
         fi
     else
         echo "错误: /tmp/cloudflared/cloudflared 可执行文件不存在"
@@ -437,23 +466,33 @@ if [ -f "/root/s.sh" ]; then
     echo "执行 /root/s.sh 脚本："
     if ! bash "/root/s.sh"; then
         echo "错误: /root/s.sh 脚本执行失败"
-        exit 1
+        # 继续执行脚本，不停止
+    else
+        echo "/root/s.sh 脚本执行成功"
     fi
-    echo "/root/s.sh 脚本执行成功"
 fi
 
 
 
 # ==========================
 # 日志前台输出（优先级 x-tunnel > xray > usque > cloudflared > dns-proxy）
-if [[ -n "$XTUNNEL_LOG" ]]; then
+if [[ -n "$XTUNNEL_LOG" && -f "$XTUNNEL_LOG" ]]; then
+    echo "正在查看 x-tunnel 日志..."
     tail -f "$XTUNNEL_LOG"
-elif [[ -n "$XRAY_LOG" ]]; then
+elif [[ -n "$XRAY_LOG" && -f "$XRAY_LOG" ]]; then
+    echo "正在查看 x-ray 日志..."
     tail -f "$XRAY_LOG"
-elif [[ -n "$USQUE_LOG" ]]; then
+elif [[ -n "$USQUE_LOG" && -f "$USQUE_LOG" ]]; then
+    echo "正在查看 usque 日志..."
     tail -f "$USQUE_LOG"
-elif [[ -n "$CLOUDFLARED_LOG" ]]; then
+elif [[ -n "$CLOUDFLARED_LOG" && -f "$CLOUDFLARED_LOG" ]]; then
+    echo "正在查看 cloudflared 日志..."
     tail -f "$CLOUDFLARED_LOG"
-elif [[ -n "$DNS_PROXY_LOG" ]]; then
+elif [[ -n "$DNS_PROXY_LOG" && -f "$DNS_PROXY_LOG" ]]; then
+    echo "正在查看 dns-proxy 日志..."
     tail -f "$DNS_PROXY_LOG"
+else
+    echo "没有服务运行，退出..."
+    # 不退出，继续执行
+    sleep infinity
 fi
