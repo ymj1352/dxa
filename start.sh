@@ -385,11 +385,11 @@ if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "clie
         # 清理旧的日志文件
         rm -f /tmp/x-tunnel.log
         if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
-            # 在x-tunnel目录内启动，使用端口10002
-            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &
+            # 在x-tunnel目录内启动
+            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml) >/tmp/x-tunnel.log 2>&1 &
         else
-            # 在x-tunnel目录内启动，使用端口10002
-            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml -port 10002) >/tmp/x-tunnel.log 2>&1 &
+            # 在x-tunnel目录内启动
+            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml) >/tmp/x-tunnel.log 2>&1 &
         fi
         XTUNNEL_PID=$!
         XTUNNEL_LOG="/tmp/x-tunnel.log"
