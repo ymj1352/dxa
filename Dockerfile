@@ -9,11 +9,14 @@ COPY start.sh ./
 # dns-proxy Web界面
 # EXPOSE 10000
 
+# x-ray 端口
+# EXPOSE 10001
+
 # x-tunnel 端口
-EXPOSE 3000
+EXPOSE 10002
 
 # usque 端口
-# EXPOSE 30001
+# EXPOSE 10003
 
 # 只安装必要的运行时依赖
 RUN apk update && apk add --no-cache openssl openssh wget tar gcompat bash && \
