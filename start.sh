@@ -48,7 +48,7 @@ fetch_and_copy() {
     local url="$2"
     local var_name=""
     local final_url=""
-    local current_dir="$PWD"
+    local target_dir="/tmp"
     
     # 根据组件名称获取对应的环境变量名称和值
     case "$name" in
@@ -81,16 +81,6 @@ fetch_and_copy() {
     # 1. 首先检查/root目录（docker挂载文件夹）
     if [ -d "/root/$name" ]; then
         echo "使用 /root/$name 目录..."
-        # 直接复制整个文件夹到当前目录
-        echo "从 /root/$name 复制到 $current_dir/ ..."
-        # 清理目标目录
-        if [ -d "$current_dir/$name" ]; then
-            rm -rf "$current_dir/$name"
-        fi
-        cp -a "/root/$name" "$current_dir/"
-    elif [ -f "/root/$name" ]; then
-        echo "使用 /root/$name 文件..."
-        cp -a "/root/$name" "$current_dir/"
     # 2. 从网络下载
     else
         echo "下载 $name 到 /root ..."
@@ -133,32 +123,81 @@ fetch_and_copy() {
             echo "错误: /root/$name 不存在或解压失败"
             exit 1
         fi
+    fi
+
+    # 特殊处理 usque 组件
+    if [ "$name" == "usque" ]; then
+        # 确保 /root/usque 目录存在
+        mkdir -p /root/usque
         
-        # 直接复制整个文件夹到当前目录
-        echo "从 /root/$name 复制到 $current_dir/ ..."
-        cd "$current_dir"
-        # 清理目标目录
-        if [ -d "$current_dir/$name" ]; then
-            rm -rf "$current_dir/$name"
+        # 检查是否有可执行文件
+        if [ ! -f "/root/usque/usque" ]; then
+            # 从下载的目录复制可执行文件
+            if [ -f "/root/usque-$ARCH_TYPE/usque" ]; then
+                echo "从 /root/usque-$ARCH_TYPE 复制到 /root/usque..."
+                cp -a /root/usque-$ARCH_TYPE/* /root/usque/
+            else
+                echo "错误: usque 可执行文件不存在"
+                exit 1
+            fi
         fi
-        if [ -d "/root/$name" ]; then
-            cp -a "/root/$name" "$current_dir/"
-        elif [ -f "/root/$name" ]; then
-            cp -a "/root/$name" "$current_dir/"
-        else
-            echo "错误: /root/$name 存在但不是有效文件或目录"
-            exit 1
+        
+        # 给可执行文件赋权
+        chmod +x /root/usque/usque
+        
+        # 检查配置文件是否存在，最多尝试3次注册
+        local register_attempts=0
+        local max_attempts=3
+        
+        while [ ! -f "/root/usque/config.json" ] && [ $register_attempts -lt $max_attempts ]; do
+            register_attempts=$((register_attempts + 1))
+            echo "usque 配置文件不存在，正在第 $register_attempts 次注册..."
+            # 在 /root/usque 目录内运行注册命令，自动输入y确认
+            (cd /root/usque && echo "y" | ./usque register)
+            
+            # 检查注册是否成功
+            if [ ! -f "/root/usque/config.json" ]; then
+                echo "第 $register_attempts 次注册失败，等待2秒后重试..."
+                sleep 2
+            else
+                echo "注册成功！"
+                break
+            fi
+        done
+        
+        # 检查最终是否注册成功
+        if [ ! -f "/root/usque/config.json" ]; then
+            echo "错误: 经过 $max_attempts 次尝试，usque 注册失败"
+            echo "跳过 usque 启动"
+            # 设置一个标志，后续启动时跳过 usque
+            SKIP_USQUE=true
+            return
         fi
     fi
 
+    # 复制到 /tmp 目录
+    echo "从 /root/$name 复制到 $target_dir/ ..."
+    # 清理目标目录
+    if [ -d "$target_dir/$name" ]; then
+        rm -rf "$target_dir/$name"
+    fi
+    if [ -d "/root/$name" ]; then
+        cp -a "/root/$name" "$target_dir/"
+    elif [ -f "/root/$name" ]; then
+        cp -a "/root/$name" "$target_dir/"
+    else
+        echo "错误: /root/$name 存在但不是有效文件或目录"
+        exit 1
+    fi
+
     # 给可执行文件赋权
-    if [ -f "$current_dir/$name" ]; then
-        chmod +x "$current_dir/$name"
-    elif [ -d "$current_dir/$name" ]; then
-        find "$current_dir/$name" -type f -exec chmod +x {} \;
+    if [ -f "$target_dir/$name" ]; then
+        chmod +x "$target_dir/$name"
+    elif [ -d "$target_dir/$name" ]; then
+        find "$target_dir/$name" -type f -exec chmod +x {} \;
         # 验证可执行文件是否存在
-        if [ ! -f "$current_dir/$name/$name" ]; then
-            echo "错误: $current_dir/$name/$name 可执行文件不存在"
+        if [ ! -f "$target_dir/$name/$name" ]; then
+            echo "错误: $target_dir/$name/$name 可执行文件不存在"
             echo "请检查下载的文件结构是否正确"
             exit 1
         fi
@@ -213,9 +252,9 @@ CONTAINER_IP=$(hostname -i | awk '{print $1}')
 
 # ==============================================
 # 输出启动模式信息
-echo "============================================"
+echo "==========================================="
 echo "容器启动模式 MODE=$MODE"
-echo "============================================"
+echo "==========================================="
 
 # 如果 dns-proxy 在当前模式下运行，则输出访问提示
 if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
@@ -228,12 +267,13 @@ fi
 # dns-proxy
 if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
     echo "启动 dns-proxy 客户端..."
-    if [ -f "./dns-proxy/dns-proxy" ]; then
-        ./dns-proxy/dns-proxy >dns-proxy.log 2>&1 &
+    if [ -f "/tmp/dns-proxy/dns-proxy" ]; then
+        # 在dns-proxy目录内启动
+        (cd /tmp/dns-proxy && ./dns-proxy) >dns-proxy.log 2>&1 &
         DNS_PROXY_PID=$!
         DNS_PROXY_LOG="dns-proxy.log"
     else
-        echo "错误: ./dns-proxy/dns-proxy 可执行文件不存在"
+        echo "错误: /tmp/dns-proxy/dns-proxy 可执行文件不存在"
         exit 1
     fi
 fi
@@ -241,57 +281,63 @@ fi
 # xray
 if [[ "$MODE" == "client_xray" ]]; then
     echo "启动 x-ray 客户端..."
-    if [ -f "./xray/xray" ]; then
-        ./xray/xray run -config ./xray/config.json >xray.log 2>&1 &
+    if [ -f "/tmp/xray/xray" ]; then
+        # 在xray目录内启动
+        (cd /tmp/xray && ./xray run -config config.json) >xray.log 2>&1 &
         XRAY_PID=$!
         XRAY_LOG="xray.log"
     else
-        echo "错误: ./xray/xray 可执行文件不存在"
+        echo "错误: /tmp/xray/xray 可执行文件不存在"
         exit 1
     fi
 fi
 
 # usque
 if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && "$MODE" != "usque") ]]; then
-    echo "启动 usque 客户端..."
-    if [ -f "./usque/usque" ]; then
-        ./usque/usque socks -p 30001 >usque.log 2>&1 &
-        USQUE_PID=$!
-        USQUE_LOG="usque.log"
+    # 检查是否跳过 usque
+    if [ "$SKIP_USQUE" == "true" ]; then
+        echo "跳过 usque 启动（注册失败）"
     else
-        echo "错误: ./usque/usque 可执行文件不存在"
-        exit 1
+        echo "启动 usque 客户端..."
+        # 直接在 /tmp/usque 目录内启动
+        if [ -f "/tmp/usque/usque" ]; then
+            (cd /tmp/usque && ./usque socks -p 30001) >usque.log 2>&1 &
+            USQUE_PID=$!
+            USQUE_LOG="usque.log"
+        else
+            echo "错误: /tmp/usque/usque 可执行文件不存在"
+            exit 1
+        fi
     fi
 fi
 
 # 启动 x-tunnel
 if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "client_tunnel" || "$MODE" == "x-tunnel" ]]; then
     # 根据模式选择配置文件
-    if [ -f "./x-tunnel/x-tunnel" ]; then
+    if [ -f "/tmp/x-tunnel/x-tunnel" ]; then
         if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
-            XTUNNEL_CMD="./x-tunnel/x-tunnel -config ./x-tunnel/config_server.yaml"
+            # 在x-tunnel目录内启动
+            (cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml) >x-tunnel.log 2>&1 &
         else
-            XTUNNEL_CMD="./x-tunnel/x-tunnel -config ./x-tunnel/config.yaml"
+            # 在x-tunnel目录内启动
+            (cd /tmp/x-tunnel && ./x-tunnel -config config.yaml) >x-tunnel.log 2>&1 &
         fi
-
-        echo "启动 x-tunnel："
-        echo "$XTUNNEL_CMD"
-
-        $XTUNNEL_CMD >x-tunnel.log 2>&1 &
+        XTUNNEL_PID=$!
         XTUNNEL_LOG="x-tunnel.log"
     else
-        echo "错误: ./x-tunnel/x-tunnel 可执行文件不存在"
+        echo "错误: /tmp/x-tunnel/x-tunnel 可执行文件不存在"
         exit 1
     fi
 fi
 
 # 启动 cloudflared
 if [[ "$MODE" == "server_argo" ]]; then
-    if [ -f "./cloudflared/cloudflared" ]; then
-        CLOUDFLARED_CMD="./cloudflared/cloudflared"
-        CLOUDFLARED_CONF="./cloudflared/cloudflared.txt"
+    if [ -f "/tmp/cloudflared/cloudflared" ]; then
+        # 构建命令
+        CLOUDFLARED_CMD="./cloudflared"
+        CLOUDFLARED_CONF="cloudflared.txt"
 
-        if [ -f "$CLOUDFLARED_CONF" ]; then
+        if [ -f "/tmp/cloudflared/$CLOUDFLARED_CONF" ]; then
             while IFS='=' read -r key value; do
                 key=$(echo "$key" | tr -d ' ')
                 value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -301,16 +347,18 @@ if [[ "$MODE" == "server_argo" ]]; then
                 [[ -z "$value" ]] && continue
 
                 CLOUDFLARED_CMD="$CLOUDFLARED_CMD --$key $value"
-            done < "$CLOUDFLARED_CONF"
+            done < "/tmp/cloudflared/$CLOUDFLARED_CONF"
         fi
 
         echo "启动 cloudflared："
         echo "$CLOUDFLARED_CMD"
 
-        $CLOUDFLARED_CMD >cloudflared.log 2>&1 &
+        # 在cloudflared目录内启动
+        (cd /tmp/cloudflared && $CLOUDFLARED_CMD) >cloudflared.log 2>&1 &
+        CLOUDFLARED_PID=$!
         CLOUDFLARED_LOG="cloudflared.log"
     else
-        echo "错误: ./cloudflared/cloudflared 可执行文件不存在"
+        echo "错误: /tmp/cloudflared/cloudflared 可执行文件不存在"
         exit 1
     fi
 fi
@@ -324,6 +372,98 @@ if [ -f "/root/s.sh" ]; then
     bash "/root/s.sh"
 fi
 
+# ==========================
+# 保活脚本
+cat > /tmp/keepalive.sh << 'EOF'
+#!/bin/bash
+
+# 检查进程是否存在
+check_process() {
+    local name=$1
+    local pid_file=/tmp/${name}.pid
+    
+    if [ -f "$pid_file" ]; then
+        local pid=$(cat "$pid_file")
+        if ps -p $pid > /dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
+# 启动进程
+start_process() {
+    local name=$1
+    local cmd=$2
+    local pid_file=/tmp/${name}.pid
+    
+    echo "启动 $name..."
+    eval "$cmd"
+    echo $! > "$pid_file"
+    echo "$name 启动成功，PID: $(cat "$pid_file")"
+}
+
+# 主循环
+while true; do
+    # 检查dns-proxy
+    if [[ "$MODE" == "client_tunnel" || "$MODE" == "client_xray" || "$MODE" == "client_usque" || "$MODE" == "dns-proxy" ]]; then
+        if ! check_process "dns-proxy"; then
+            start_process "dns-proxy" "(cd /tmp/dns-proxy && ./dns-proxy) >/tmp/dns-proxy.log 2>&1 &"
+        fi
+    fi
+    
+    # 检查xray
+    if [[ "$MODE" == "client_xray" ]]; then
+        if ! check_process "xray"; then
+            start_process "xray" "(cd /tmp/xray && ./xray run -config config.json) >/tmp/xray.log 2>&1 &"
+        fi
+    fi
+    
+    # 检查usque
+    if [[ "$MODE" == "client_usque" || "$MODE" == "usque" || ("$USQUE" == "true" && "$MODE" != "usque") ]]; then
+        # 检查是否跳过 usque
+        if [ "$SKIP_USQUE" != "true" ]; then
+            if ! check_process "usque"; then
+                # 直接在 /tmp/usque 目录内启动
+                if [ -f "/tmp/usque/usque" ]; then
+                    start_process "usque" "(cd /tmp/usque && ./usque socks -p 30001) >/tmp/usque.log 2>&1 &"
+                else
+                    echo "错误: /tmp/usque/usque 可执行文件不存在"
+                    continue
+                fi
+            fi
+        fi
+    fi
+    
+    # 检查x-tunnel
+    if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" || "$MODE" == "client_tunnel" || "$MODE" == "x-tunnel" ]]; then
+        if ! check_process "x-tunnel"; then
+            if [[ "$MODE" == "server_direct" || "$MODE" == "server_argo" ]]; then
+                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config_server.yaml) >/tmp/x-tunnel.log 2>&1 &"
+            else
+                start_process "x-tunnel" "(cd /tmp/x-tunnel && ./x-tunnel -config config.yaml) >/tmp/x-tunnel.log 2>&1 &"
+            fi
+        fi
+    fi
+    
+    # 检查cloudflared
+    if [[ "$MODE" == "server_argo" ]]; then
+        if ! check_process "cloudflared"; then
+            start_process "cloudflared" "(cd /tmp/cloudflared && ./cloudflared) >/tmp/cloudflared.log 2>&1 &"
+        fi
+    fi
+    
+    sleep 10
+done
+EOF
+
+chmod +x /tmp/keepalive.sh
+
+# 启动保活脚本
+/tmp/keepalive.sh &
 
 # ==========================
 # 日志前台输出（优先级 x-tunnel > xray > usque > cloudflared > dns-proxy）
