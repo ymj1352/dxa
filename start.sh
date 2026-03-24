@@ -427,7 +427,11 @@ if [[ "$MODE" == "server_argo" ]]; then
                 [[ -z "$key" || "$key" == "{" || "$key" == "}" || "$key" =~ ^// ]] && continue
                 [[ -z "$value" ]] && continue
 
-                CLOUDFLARED_CMD="$CLOUDFLARED_CMD --$key $value"
+                if [[ "$key" == "token" ]]; then
+                    CLOUDFLARED_CMD="$CLOUDFLARED_CMD --token $value"
+                else
+                    CLOUDFLARED_CMD="$CLOUDFLARED_CMD --$key $value"
+                fi
             done < "/tmp/cloudflared/$CLOUDFLARED_CONF"
         fi
 
