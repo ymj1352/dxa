@@ -1,11 +1,9 @@
 name: Build and Push Docker Image
 
-于:
+on:
   push:
-    分支: [ main ]
-    paths:
-      - 'Dockerfile'
-      - 'start.sh'
+    branches:
+      - master
   workflow_dispatch:
 
 jobs:
@@ -18,10 +16,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # 关键步骤 1: 设置 QEMU，用于模拟 ARM 环境进行跨平台构建
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -39,10 +33,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          # 关键步骤 2: 在此处添加 linux/arm64
-          # 如果还需要支持 32位 ARM（如老款树莓派），可以加上 linux/arm/v7
-          platforms: linux/amd64,linux/arm64
-          标签: |
+          platforms: linux/amd64
+          tags: |
             ghcr.io/${{ github.repository_owner }}/kxc:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
