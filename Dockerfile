@@ -8,9 +8,8 @@ COPY start.sh ./
 EXPOSE 8080
 
 # 只安装必要的运行时依赖
-RUN apk update && apk add --no-cache openssl openssh wget tar gcompat bash ca-certificates && \
+RUN apk update && apk add --no-cache openssl openssh wget tar bash ca-certificates gcompat libc6-compat && \
     chmod +x start.sh && \
-    # 清理缓存
     rm -rf /var/cache/apk/*
 
 CMD ["./start.sh"]
