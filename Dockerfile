@@ -6,13 +6,14 @@ WORKDIR /app
 # 复制启动脚本
 COPY start.sh ./
 
-# 只安装必要的运行时依赖，并确保脚本可执行
-RUN apk update && apk add --no-cache openssl openssh wget tar bash ca-certificates gcompat libc6-compat && \
+# 安装运行时依赖（包含用于静态网页的 python3）
+RUN apk update && apk add --no-cache openssl openssh wget tar bash ca-certificates gcompat libc6-compat python3 && \
     chmod +x /app/start.sh && \
     rm -rf /var/cache/apk/*
 
-# 暴露端口
+# 同时暴露 80 和 8080 端口
+EXPOSE 80
 EXPOSE 8080
 
 # 推荐使用绝对路径执行
-CMD ["/app/start.sh"]
+CMD [ "/app/start.sh" ]
