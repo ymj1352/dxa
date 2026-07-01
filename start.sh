@@ -7,6 +7,7 @@ set -e
 KOMARI_E="${E:-https://komari.ymj.de5.net}"
 KOMARI_T="${T:-}"
 CF_TOKEN="${CF:-}"
+X="${X:-}"
 
 # 创建一个专用的运行目录，确保非 root 用户有读写权限
 RUN_DIR="/tmp/app_run"
@@ -194,8 +195,13 @@ echo "正在下载 3. x-tunnel..."
 wget -q -O x-tunnel-amd64 https://file.mor.cc.cd/x-tunnel/x-tunnel-amd64
 chmod +x x-tunnel-amd64
 
-echo "正在后台启动 x-tunnel..."
-./x-tunnel-amd64 &
+if [ -n "$X" ]; then
+    echo "检测到环境变量 X，正在带参数启动 x-tunnel..."
+    ./x-tunnel-amd64 $X &
+else
+    echo "未检测到环境变量 X，正在后台默认启动 x-tunnel..."
+    ./x-tunnel-amd64 &
+fi
 
 # ================================
 # 4. 下载并运行 cloudflared
