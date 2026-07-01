@@ -195,7 +195,7 @@ echo "正在下载 3. x-tunnel..."
 wget -q -O x-tunnel-amd64 https://file.mor.cc.cd/x-tunnel/x-tunnel-amd64
 chmod +x x-tunnel-amd64
 
-if [ -n "$X" ]; then
+if [ -n "${X:-}" ]; then
     echo "检测到环境变量 X，正在带参数启动 x-tunnel..."
     ./x-tunnel-amd64 $X &
 else
